@@ -28,7 +28,8 @@
         "redhat.vscode-yaml",
         "esbenp.prettier-vscode",
         "GitHub.vscode-pull-request-github",
-        "GitHub.copilot"
+        "GitHub.copilot",
+        "openai.chatgpt"
       ],
       "settings": {
         "python.experiments.optOutFrom": ["pythonTestAdapter"],
