@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+. .venv/bin/activate
+
+if [[ -d tests ]]; then
+  pytest tests
+else
+  echo "No tests directory yet; skipping pytest."
+fi

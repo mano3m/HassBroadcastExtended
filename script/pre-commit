@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+. .venv/bin/activate
+prek run --all-files --show-diff-on-failure

@@ -1,0 +1,7 @@
+homeassistant>=2026.5.0
+mypy
+prek
+pytest
+pytest-asyncio
+ruff
+types-PyYAML

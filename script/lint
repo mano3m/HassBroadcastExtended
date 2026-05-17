@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+. .venv/bin/activate
+ruff format --check .
+ruff check .
+
+paths=()
+for path in custom_components tests; do
+  if [[ -d "${path}" ]]; then
+    paths+=("${path}")
+  fi
+done
+
+if (( ${#paths[@]} )); then
+  mypy "${paths[@]}"
+else
+  echo "No custom_components or tests directory yet; skipping mypy."
+fi
