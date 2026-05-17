@@ -1,0 +1,9 @@
+{
+  "domain": "hass_broadcast_extended",
+  "name": "Hass Broadcast Extended",
+  "codeowners": [],
+  "dependencies": ["intent", "media_player", "tts"],
+  "documentation": "https://github.com/FrodeHus/HassBroadcastExtended",
+  "iot_class": "local_push",
+  "version": "0.0.0"
+}
