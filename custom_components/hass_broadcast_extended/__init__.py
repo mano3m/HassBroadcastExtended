@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, ClassVar
 
 from homeassistant.components.media_player.const import (
@@ -54,6 +55,12 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _UNUSABLE_STATES = {STATE_UNAVAILABLE, STATE_UNKNOWN}
+_SENTENCE_FILE_HEADER = "# Managed by Hass Broadcast Extended. Do not edit.\n"
+_SENTENCE_FILES = {
+    ("nl", "hass_broadcast_extended.yaml"): Path(__file__).with_name("sentences")
+    / "nl"
+    / "homeassistant_HassBroadcast.yaml",
+}
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -83,6 +90,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Hass Broadcast Extended."""
     conf: dict[str, Any] = dict(config.get(DOMAIN, {}))
 
+    updated_sentence_languages = await hass.async_add_executor_job(
+        _install_sentence_files, hass
+    )
+    for language in updated_sentence_languages:
+        if hass.services.has_service("conversation", "reload"):
+            await hass.services.async_call(
+                "conversation",
+                "reload",
+                {"language": language},
+                blocking=False,
+            )
+
     @callback
     def register_handler(_: Event | None = None) -> None:
         current_handler = hass.data.get(intent.DATA_KEY, {}).get(
@@ -100,6 +119,34 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     register_handler()
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, register_handler)
     return True
+
+
+def _install_sentence_files(hass: HomeAssistant) -> set[str]:
+    """Install bundled custom sentences into Home Assistant's sentence directory."""
+    updated_languages: set[str] = set()
+    for (language, filename), source_path in _SENTENCE_FILES.items():
+        target_path = Path(hass.config.path("custom_sentences", language, filename))
+        source_text = source_path.read_text(encoding="utf-8")
+        target_text = f"{_SENTENCE_FILE_HEADER}{source_text}"
+
+        if target_path.exists():
+            existing_text = target_path.read_text(encoding="utf-8")
+            if existing_text == target_text:
+                continue
+            if not existing_text.startswith(_SENTENCE_FILE_HEADER):
+                _LOGGER.warning(
+                    "Skipping custom sentence file because it is not managed by "
+                    "Hass Broadcast Extended: %s",
+                    target_path,
+                )
+                continue
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(target_text, encoding="utf-8")
+        updated_languages.add(language)
+        _LOGGER.debug("Installed custom sentence file: %s", target_path)
+
+    return updated_languages
 
 
 class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):

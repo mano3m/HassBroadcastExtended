@@ -2,9 +2,9 @@
   "domain": "hass_broadcast_extended",
   "name": "Hass Broadcast Extended",
   "codeowners": ["@mano3m"],
-  "dependencies": ["intent", "media_player", "tts"],
+  "dependencies": ["conversation", "intent", "media_player", "tts"],
   "documentation": "https://github.com/mano3m/HassBroadcastExtended",
   "issue_tracker": "https://github.com/mano3m/HassBroadcastExtended/issues",
   "iot_class": "local_push",
-  "version": "0.1.2"
+  "version": "0.1.3"
 }

@@ -30,6 +30,14 @@ hass_broadcast_extended:
 
 The integration overwrites the built-in `HassBroadcast` handler so existing Assist sentences keep working. It still calls the original handler first, then sends the same announcement to the configured media players.
 
+The integration also installs bundled Assist sentence extensions into Home Assistant's `custom_sentences` directory. For Dutch, this adds:
+
+```text
+[stuur|verzend] [de] [volgende] mededeling {message}
+```
+
+This matches phrases such as `stuur de volgende mededeling eten is klaar` and passes `eten is klaar` as the broadcast message.
+
 ### Options
 
 | Option | Required | Default | Description |
