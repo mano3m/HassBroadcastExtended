@@ -28,13 +28,13 @@ from homeassistant.components.tts.const import (
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_SUPPORTED_FEATURES,
-    EVENT_HOMEASSISTANT_STARTED,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import intent
+from homeassistant.helpers import start as ha_start
 from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
@@ -103,7 +103,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
 
     @callback
-    def register_handler(_: Event | None = None) -> None:
+    def register_handler(_: HomeAssistant) -> None:
         current_handler = hass.data.get(intent.DATA_KEY, {}).get(
             intent.INTENT_BROADCAST
         )
@@ -116,8 +116,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             hass, BroadcastToMediaPlayersIntentHandler(conf, original_handler)
         )
 
-    register_handler()
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, register_handler)
+    ha_start.async_at_started(hass, register_handler)
     return True
 
 
