@@ -125,7 +125,11 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
         slots = self.async_validate_slots(intent_obj.slots)
         message: str = slots["message"]["value"]
 
-        original_response = await self._async_handle_original_intent(intent_obj)
+        original_response = (
+            await self.original_handler.async_handle(intent_obj)
+            if self.original_handler
+            else None
+        )
         if original_response:
             _LOGGER.debug(
                 "Original broadcast intent returned successful targets: %s",
@@ -134,15 +138,13 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
         else:
             _LOGGER.debug("No original broadcast intent handler was available")
 
-        original_entity_ids: set[str] = (
-            {
-                target.id
-                for target in original_response.success_results
-                if target.id is not None
-            }
-            if original_response
-            else set()
-        )
+        original_entity_ids = {
+            target.id
+            for target in (
+                original_response.success_results if original_response else []
+            )
+            if target.id is not None
+        }
 
         media_player_entity_ids = self._get_media_player_entity_ids(
             intent_obj.hass, original_entity_ids
@@ -199,15 +201,6 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
         )
         return response
 
-    async def _async_handle_original_intent(
-        self, intent_obj: intent.Intent
-    ) -> intent.IntentResponse | None:
-        """Run the original HassBroadcast handler, if one was registered."""
-        if self.original_handler is None:
-            return None
-
-        return await self.original_handler.async_handle(intent_obj)
-
     def _get_media_player_entity_ids(
         self, hass: HomeAssistant, handled_entity_ids: set[str]
     ) -> list[str]:
@@ -225,40 +218,26 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
 
         targets: list[str] = []
         for entity_id in entity_ids:
-            if entity_id in handled_entity_ids:
-                _LOGGER.debug(
-                    "Skipping media player %s because it was already handled by "
-                    "the original broadcast intent",
-                    entity_id,
-                )
-                continue
-
-            if entity_id in exclude:
-                _LOGGER.debug(
-                    "Skipping media player %s because it is excluded by configuration",
-                    entity_id,
-                )
-                continue
-
             state = hass.states.get(entity_id)
-            if require_available and (state is None or state.state in _UNUSABLE_STATES):
-                _LOGGER.debug(
-                    "Skipping media player %s because it is not available",
-                    entity_id,
-                )
-                continue
-
             supported_features = (
                 state.attributes.get(ATTR_SUPPORTED_FEATURES, 0) if state else 0
             )
-            if not supported_features & MediaPlayerEntityFeature.MEDIA_ANNOUNCE:
-                _LOGGER.debug(
-                    "Skipping media player %s because it does not support announcements",
-                    entity_id,
-                )
+
+            if entity_id in handled_entity_ids:
+                reason = "it was already handled by the original broadcast intent"
+            elif entity_id in exclude:
+                reason = "it is excluded by configuration"
+            elif require_available and (
+                state is None or state.state in _UNUSABLE_STATES
+            ):
+                reason = "it is not available"
+            elif not supported_features & MediaPlayerEntityFeature.MEDIA_ANNOUNCE:
+                reason = "it does not support announcements"
+            else:
+                targets.append(entity_id)
                 continue
 
-            targets.append(entity_id)
+            _LOGGER.debug("Skipping media player %s because %s", entity_id, reason)
 
         return targets
 
