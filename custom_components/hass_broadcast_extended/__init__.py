@@ -115,6 +115,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         intent.async_register(
             hass, BroadcastToMediaPlayersIntentHandler(conf, original_handler)
         )
+        _LOGGER.debug(
+            "Registered Hass Broadcast Extended handler; original handler: %s",
+            original_handler,
+        )
 
     ha_start.async_at_started(hass, register_handler)
     return True
@@ -171,6 +175,8 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
         slots = self.async_validate_slots(intent_obj.slots)
         message: str = slots["message"]["value"]
 
+        _LOGGER.debug("Handling HassBroadcast message with %d characters", len(message))
+
         original_response = (
             await self.original_handler.async_handle(intent_obj)
             if self.original_handler
@@ -196,6 +202,7 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
             intent_obj.hass, original_entity_ids
         )
         if not media_player_entity_ids:
+            _LOGGER.debug("No additional media player targets selected for broadcast")
             if original_response:
                 return original_response
             raise intent.IntentHandleError("No media players available for broadcast")
@@ -218,6 +225,13 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
         if options := self._config.get(CONF_OPTIONS):
             service_data[ATTR_OPTIONS] = options
 
+        _LOGGER.debug(
+            "Calling %s.%s using %s for media player targets: %s",
+            TTS_DOMAIN,
+            SERVICE_SPEAK,
+            tts_entity_id,
+            media_player_entity_ids,
+        )
         await intent_obj.hass.services.async_call(
             TTS_DOMAIN,
             SERVICE_SPEAK,
@@ -231,7 +245,7 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
             intent_obj.hass, media_player_entity_ids
         )
         _LOGGER.debug(
-            "Hass Broadcast Extended returned successful media player targets: %s",
+            "Queued HassBroadcast media player announcement for successful targets: %s",
             self._format_response_targets(media_player_response_targets),
         )
 
