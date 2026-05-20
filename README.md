@@ -30,6 +30,8 @@ hass_broadcast_extended:
 
 The integration overwrites the built-in `HassBroadcast` handler so existing Assist sentences keep working. It still calls the original handler first, then sends the same announcement to the configured media players.
 
+Media players provided by the Alexa Media Player custom integration are detected automatically. Those entities use `notify.alexa_media` with `type: announce` instead of `tts.speak`, while all other media players continue to use the configured TTS engine.
+
 The integration also installs bundled Assist sentence extensions into Home Assistant's `custom_sentences` directory. For Dutch, this adds:
 
 ```text

@@ -33,12 +33,14 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 from homeassistant.helpers import start as ha_start
 from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
 from .const import (
+    ALEXA_MEDIA_PLATFORM,
     CONF_CACHE,
     CONF_EXCLUDE,
     CONF_INCLUDE,
@@ -49,6 +51,8 @@ from .const import (
     DEFAULT_CACHE,
     DEFAULT_REQUIRE_AVAILABLE,
     DOMAIN,
+    NOTIFY_DOMAIN,
+    NOTIFY_SERVICE_ALEXA_MEDIA,
     SERVICE_SPEAK,
 )
 
@@ -207,38 +211,22 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
                 return original_response
             raise intent.IntentHandleError("No media players available for broadcast")
 
-        tts_entity_id = self._config.get(CONF_TTS_ENTITY) or async_default_engine(
-            intent_obj.hass
+        alexa_media_entity_ids = [
+            entity_id
+            for entity_id in media_player_entity_ids
+            if self._is_alexa_media_player(intent_obj.hass, entity_id)
+        ]
+        tts_media_player_entity_ids = [
+            entity_id
+            for entity_id in media_player_entity_ids
+            if entity_id not in alexa_media_entity_ids
+        ]
+
+        await self._async_announce_to_tts_media_players(
+            intent_obj, message, tts_media_player_entity_ids
         )
-        if not tts_entity_id:
-            raise intent.IntentHandleError("No text-to-speech engine is available")
-
-        service_data: dict[str, Any] = {
-            ATTR_MEDIA_PLAYER_ENTITY_ID: media_player_entity_ids,
-            ATTR_MESSAGE: message,
-            ATTR_CACHE: self._config[CONF_CACHE],
-        }
-
-        if language := self._config.get(CONF_LANGUAGE):
-            service_data[ATTR_LANGUAGE] = language
-
-        if options := self._config.get(CONF_OPTIONS):
-            service_data[ATTR_OPTIONS] = options
-
-        _LOGGER.debug(
-            "Calling %s.%s using %s for media player targets: %s",
-            TTS_DOMAIN,
-            SERVICE_SPEAK,
-            tts_entity_id,
-            media_player_entity_ids,
-        )
-        await intent_obj.hass.services.async_call(
-            TTS_DOMAIN,
-            SERVICE_SPEAK,
-            service_data,
-            blocking=False,
-            context=intent_obj.context,
-            target={ATTR_ENTITY_ID: tts_entity_id},
+        await self._async_announce_to_alexa_media_players(
+            intent_obj, message, alexa_media_entity_ids
         )
 
         media_player_response_targets = self._get_media_player_response_targets(
@@ -260,6 +248,85 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
             else None,
         )
         return response
+
+    async def _async_announce_to_tts_media_players(
+        self,
+        intent_obj: intent.Intent,
+        message: str,
+        entity_ids: list[str],
+    ) -> None:
+        """Announce to regular media players with the configured TTS engine."""
+        if not entity_ids:
+            return
+
+        tts_entity_id = self._config.get(CONF_TTS_ENTITY) or async_default_engine(
+            intent_obj.hass
+        )
+        if not tts_entity_id:
+            raise intent.IntentHandleError("No text-to-speech engine is available")
+
+        data: dict[str, Any] = {
+            ATTR_MEDIA_PLAYER_ENTITY_ID: entity_ids,
+            ATTR_MESSAGE: message,
+            ATTR_CACHE: self._config[CONF_CACHE],
+        }
+
+        if language := self._config.get(CONF_LANGUAGE):
+            data[ATTR_LANGUAGE] = language
+
+        if options := self._config.get(CONF_OPTIONS):
+            data[ATTR_OPTIONS] = options
+
+        _LOGGER.debug(
+            "Calling %s.%s using %s for media player targets: %s",
+            TTS_DOMAIN,
+            SERVICE_SPEAK,
+            tts_entity_id,
+            entity_ids,
+        )
+        await intent_obj.hass.services.async_call(
+            TTS_DOMAIN,
+            SERVICE_SPEAK,
+            data,
+            blocking=False,
+            context=intent_obj.context,
+            target={ATTR_ENTITY_ID: tts_entity_id},
+        )
+
+    async def _async_announce_to_alexa_media_players(
+        self,
+        intent_obj: intent.Intent,
+        message: str,
+        entity_ids: list[str],
+    ) -> None:
+        """Announce to Alexa Media Player entities with notify.alexa_media."""
+        if not entity_ids:
+            return
+
+        if not intent_obj.hass.services.has_service(
+            NOTIFY_DOMAIN, NOTIFY_SERVICE_ALEXA_MEDIA
+        ):
+            raise intent.IntentHandleError(
+                "Alexa Media Player notify service is unavailable"
+            )
+
+        _LOGGER.debug(
+            "Calling %s.%s for Alexa Media Player targets: %s",
+            NOTIFY_DOMAIN,
+            NOTIFY_SERVICE_ALEXA_MEDIA,
+            entity_ids,
+        )
+        await intent_obj.hass.services.async_call(
+            NOTIFY_DOMAIN,
+            NOTIFY_SERVICE_ALEXA_MEDIA,
+            {
+                ATTR_MESSAGE: message,
+                "target": entity_ids,
+                "data": {"type": "announce"},
+            },
+            blocking=False,
+            context=intent_obj.context,
+        )
 
     def _get_media_player_entity_ids(
         self, hass: HomeAssistant, handled_entity_ids: set[str]
@@ -291,7 +358,10 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
                 state is None or state.state in _UNUSABLE_STATES
             ):
                 reason = "it is not available"
-            elif not supported_features & MediaPlayerEntityFeature.MEDIA_ANNOUNCE:
+            elif (
+                not self._is_alexa_media_player(hass, entity_id)
+                and not supported_features & MediaPlayerEntityFeature.MEDIA_ANNOUNCE
+            ):
                 reason = "it does not support announcements"
             else:
                 targets.append(entity_id)
@@ -300,6 +370,14 @@ class BroadcastToMediaPlayersIntentHandler(intent.IntentHandler):
             _LOGGER.debug("Skipping media player %s because %s", entity_id, reason)
 
         return targets
+
+    @staticmethod
+    def _is_alexa_media_player(hass: HomeAssistant, entity_id: str) -> bool:
+        """Return whether an entity belongs to Alexa Media Player."""
+        entity_entry = er.async_get(hass).async_get(entity_id)
+        return (
+            entity_entry is not None and entity_entry.platform == ALEXA_MEDIA_PLATFORM
+        )
 
     def _get_media_player_response_targets(
         self, hass: HomeAssistant, entity_ids: list[str]
